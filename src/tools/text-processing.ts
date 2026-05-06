@@ -6,6 +6,9 @@ import { escapeRegExp } from 'lodash-es'
 import type OmnisearchPlugin from '../main'
 
 export class TextProcessor {
+  private highlightCache = new Map<string, RegExp>()
+  private stringsRegexCache = new Map<string, string>()
+
   constructor(private plugin: OmnisearchPlugin) {}
 
   /**
@@ -23,13 +26,15 @@ export class TextProcessor {
       return text
     }
     try {
-      return text.replace(
-        new RegExp(
-          `(${matches.map(item => escapeRegExp(item.match)).join('|')})`,
-          'giu'
-        ),
-        `<span class="${highlightClass}">$1</span>`
-      )
+      const pattern = matches
+        .map(item => escapeRegExp(item.match))
+        .join('|')
+      let regex = this.highlightCache.get(pattern)
+      if (!regex) {
+        regex = new RegExp(`(${pattern})`, 'giu')
+        this.highlightCache.set(pattern, regex)
+      }
+      return text.replace(regex, `<span class="${highlightClass}">$1</span>`)
     } catch (e) {
       console.error('Omnisearch - Error in highlightText()', e)
       return text
@@ -44,13 +49,17 @@ export class TextProcessor {
     if (!strings.length) return /^$/g
 
     // sort strings by decreasing length, so that longer strings are matched first
-    strings.sort((a, b) => b.length - a.length)
+    const sorted = [...strings].sort((a, b) => b.length - a.length)
 
-    const joined = `(${strings
-      .map(s => `\\b${escapeRegExp(s)}\\b|${escapeRegExp(s)}`)
-      .join('|')})`
-
-    return new RegExp(`${joined}`, 'gui')
+    const key = sorted.join('|')
+    let pattern = this.stringsRegexCache.get(key)
+    if (!pattern) {
+      pattern = `(${sorted
+        .map(s => `\\b${escapeRegExp(s)}\\b|${escapeRegExp(s)}`)
+        .join('|')})`
+      this.stringsRegexCache.set(key, pattern)
+    }
+    return new RegExp(pattern, 'gui')
   }
 
   /**
